@@ -187,7 +187,6 @@ cc_binary {
     static_libs: [
         "libc++fs",
         "librecovery",
-        "librecovery_command_server",
         "librecovery_ui_default",
     ],
 
