@@ -173,20 +173,28 @@ std::string RecoveryCommandServer::ExecuteCommand(const std::string& command_str
 std::string RecoveryCommandServer::HandleWipe() {
   LOG(INFO) << "Executing wipe command";
 
-  // Set the bootloader message to trigger a data wipe on next boot
-  bootloader_message boot = {};
-  boot.command[0] = '\0';
-  boot.status[0] = '\0';
-  strlcpy(boot.recovery, "recovery\n--wipe_data\n", sizeof(boot.recovery));
+  try {
+    // Set the bootloader message to trigger a data wipe on next boot
+    bootloader_message boot = {};
+    boot.command[0] = '\0';
+    boot.status[0] = '\0';
+    strlcpy(boot.recovery, "recovery\n--wipe_data\n", sizeof(boot.recovery));
 
-  std::string err;
-  if (!write_bootloader_message(boot, &err)) {
-    LOG(ERROR) << "Failed to write bootloader message: " << err;
-    return std::string("ERROR: ") + err;
+    std::string err;
+    if (!write_bootloader_message(boot, &err)) {
+      LOG(ERROR) << "Failed to write bootloader message: " << err;
+      return std::string("ERROR: ") + err;
+    }
+
+    LOG(INFO) << "Wipe command queued, will execute on next boot";
+    return "OK: Wipe queued for next recovery boot. Please reboot to recovery.";
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "Wipe failed: " << e.what();
+    return std::string("ERROR: ") + e.what();
+  } catch (...) {
+    LOG(ERROR) << "Wipe failed with unknown error";
+    return "ERROR: Unknown error during wipe";
   }
-
-  LOG(INFO) << "Wipe command queued, will execute on next boot";
-  return "OK: Wipe queued for next recovery boot. Please reboot to recovery.";
 }
 
 std::string RecoveryCommandServer::HandleFlash(const std::string& file_path) {
@@ -203,25 +211,33 @@ std::string RecoveryCommandServer::HandleFlash(const std::string& file_path) {
     return "ERROR: File not readable";
   }
 
-  // Set the bootloader message to install the package on next boot
-  bootloader_message boot = {};
-  boot.command[0] = '\0';
-  boot.status[0] = '\0';
+  try {
+    // Set the bootloader message to install the package on next boot
+    bootloader_message boot = {};
+    boot.command[0] = '\0';
+    boot.status[0] = '\0';
 
-  std::string recovery_cmd = std::string("recovery\n--update_package=") + file_path + "\n";
-  if (recovery_cmd.length() > sizeof(boot.recovery)) {
-    LOG(ERROR) << "File path too long for bootloader message";
-    return "ERROR: File path too long";
+    std::string recovery_cmd = std::string("recovery\n--update_package=") + file_path + "\n";
+    if (recovery_cmd.length() > sizeof(boot.recovery)) {
+      LOG(ERROR) << "File path too long for bootloader message";
+      return "ERROR: File path too long";
+    }
+
+    strlcpy(boot.recovery, recovery_cmd.c_str(), sizeof(boot.recovery));
+
+    std::string err;
+    if (!write_bootloader_message(boot, &err)) {
+      LOG(ERROR) << "Failed to write bootloader message: " << err;
+      return std::string("ERROR: ") + err;
+    }
+
+    LOG(INFO) << "Flash command queued for file: " << file_path;
+    return "OK: Flash queued for next recovery boot. Please reboot to recovery.";
+  } catch (const std::exception& e) {
+    LOG(ERROR) << "Flash failed: " << e.what();
+    return std::string("ERROR: ") + e.what();
+  } catch (...) {
+    LOG(ERROR) << "Flash failed with unknown error";
+    return "ERROR: Unknown error during flash";
   }
-
-  strlcpy(boot.recovery, recovery_cmd.c_str(), sizeof(boot.recovery));
-
-  std::string err;
-  if (!write_bootloader_message(boot, &err)) {
-    LOG(ERROR) << "Failed to write bootloader message: " << err;
-    return std::string("ERROR: ") + err;
-  }
-
-  LOG(INFO) << "Flash command queued for file: " << file_path;
-  return "OK: Flash queued for next recovery boot. Please reboot to recovery.";
 }
