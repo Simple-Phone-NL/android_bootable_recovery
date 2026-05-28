@@ -33,6 +33,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -61,6 +62,7 @@
 #include "recovery_ui/ui.h"
 #include "recovery_utils/logging.h"
 #include "recovery_utils/roots.h"
+#include "tools/recovery_command_server.h"
 
 namespace fs = std::filesystem;
 
@@ -520,6 +522,12 @@ int main(int argc, char** argv) {
   std::atomic<Device::BuiltinAction> action;
   std::thread listener_thread(ListenRecoverySocket, ui, std::ref(action));
   listener_thread.detach();
+
+  // Start the recovery command server for command-line tools
+  auto command_server = std::make_unique<RecoveryCommandServer>();
+  if (!command_server->Start()) {
+    LOG(WARNING) << "Failed to start recovery command server";
+  }
 
   // Set up adb_keys and enable root before starting ADB.
   if (IsRoDebuggable() && !fastboot) {
