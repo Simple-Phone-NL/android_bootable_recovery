@@ -279,7 +279,7 @@ static void ListenAndExecuteMinadbdCommands(
 //
 static void CreateMinadbdServiceAndExecuteCommands(
     Device* device, const std::map<MinadbdCommand, CommandFunction>& command_map,
-    bool rescue_mode) {
+    AdbInteractionMode mode) {
   signal(SIGPIPE, SIG_IGN);
 
   android::base::unique_fd recovery_socket;
@@ -301,8 +301,10 @@ static void CreateMinadbdServiceAndExecuteCommands(
       "--socket_fd",
       std::to_string(minadbd_socket.release()),
     };
-    if (rescue_mode) {
+    if (mode == AdbInteractionMode::kRescue) {
       minadbd_commands.push_back("--rescue");
+    } else if (mode == AdbInteractionMode::kAutomation) {
+      minadbd_commands.push_back("--automation");
     }
     auto exec_args = StringVectorToNullTerminatedArray(minadbd_commands);
     execv(exec_args[0], exec_args.data());
@@ -322,8 +324,9 @@ static void CreateMinadbdServiceAndExecuteCommands(
   std::thread listener_thread(ListenAndExecuteMinadbdCommands, ui, child,
                               std::move(recovery_socket), std::ref(command_map));
 
-  if (ui->IsTextVisible()) {
-    std::vector<std::string> headers{ rescue_mode ? "Rescue mode" : "ADB Sideload" };
+  // Automation mode is non-interactive; standard sideload may show a cancel menu.
+  if (mode == AdbInteractionMode::kSideload && ui->IsTextVisible()) {
+    std::vector<std::string> headers{ "ADB Sideload" };
     std::vector<std::string> entries{ "Cancel" };
     size_t chosen_item = ui->ShowMenu(
         headers, entries, 0, true,
@@ -352,7 +355,8 @@ static void CreateMinadbdServiceAndExecuteCommands(
   signal(SIGPIPE, SIG_DFL);
 }
 
-InstallResult ApplyFromAdb(Device* device, bool rescue_mode, Device::BuiltinAction* reboot_action) {
+InstallResult ApplyFromAdb(Device* device, AdbInteractionMode mode,
+                           Device::BuiltinAction* reboot_action) {
   // Save the usb state to restore after the sideload operation.
   std::string usb_state = android::base::GetProperty("sys.usb.state", "none");
   // Clean up state and stop adbd.
@@ -379,21 +383,36 @@ InstallResult ApplyFromAdb(Device* device, bool rescue_mode, Device::BuiltinActi
       std::bind(&AdbRebootHandler, MinadbdCommand::kRebootRescue, &install_result, reboot_action) },
   };
 
-  if (!rescue_mode) {
-    ui->Print(
-        "\n\nNow send the package you want to apply\n"
-        "to the device with \"adb sideload <filename>\"...\n");
-  } else {
+  const bool extended_commands =
+      mode == AdbInteractionMode::kRescue || mode == AdbInteractionMode::kAutomation;
+  if (extended_commands) {
     command_map.emplace(MinadbdCommand::kWipeData, [&device]() {
       bool result = WipeData(device);
       return std::make_pair(result, true);
     });
     command_map.emplace(MinadbdCommand::kNoOp, []() { return std::make_pair(true, true); });
-
-    ui->Print("\n\nWaiting for rescue commands...\n");
   }
 
-  CreateMinadbdServiceAndExecuteCommands(device, command_map, rescue_mode);
+  switch (mode) {
+    case AdbInteractionMode::kSideload:
+      ui->Print(
+          "\n\nNow send the package you want to apply\n"
+          "to the device with \"adb sideload <filename>\"...\n");
+      break;
+    case AdbInteractionMode::kRescue:
+      ui->Print("\n\nWaiting for rescue commands...\n");
+      break;
+    case AdbInteractionMode::kAutomation:
+      ui->Print(
+          "\n\nADB automation mode.\n"
+          "  adb sideload <file>     install OTA package\n"
+          "  adb reboot              reboot to system\n"
+          "  Factory reset: open adb service wipe-data:userdata:<N>\n"
+          "    (same protocol as rescue-wipe; N >= 8)\n");
+      break;
+  }
+
+  CreateMinadbdServiceAndExecuteCommands(device, command_map, mode);
 
   // Clean up before switching to the older state, for example setting the state
   // to none sets sys/class/android_usb/android0/enable to 0.

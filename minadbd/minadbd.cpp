@@ -57,8 +57,7 @@ static void minadbd_net_init() {
 int main(int argc, char** argv) {
   android::base::InitLogging(argv, &android::base::StderrLogger);
   // TODO(xunchang) implement a command parser
-  if ((argc != 3 && argc != 4) || argv[1] != "--socket_fd"s ||
-      (argc == 4 && argv[3] != "--rescue"s)) {
+  if (argc < 3 || argc > 4 || argv[1] != "--socket_fd"s) {
     LOG(ERROR) << "minadbd has invalid arguments, argc: " << argc;
     exit(kMinadbdArgumentsParsingError);
   }
@@ -75,8 +74,16 @@ int main(int argc, char** argv) {
   SetMinadbdSocketFd(socket_fd);
 
   if (argc == 4) {
-    SetMinadbdRescueMode(true);
-    adb_device_banner = "rescue";
+    if (argv[3] == "--rescue"s) {
+      SetMinadbdRescueMode(true);
+      adb_device_banner = "rescue";
+    } else if (argv[3] == "--automation"s) {
+      SetMinadbdAutomationMode(true);
+      adb_device_banner = "sideload";
+    } else {
+      LOG(ERROR) << "minadbd has invalid mode argument: " << argv[3];
+      exit(kMinadbdArgumentsParsingError);
+    }
   } else {
     adb_device_banner = "sideload";
   }

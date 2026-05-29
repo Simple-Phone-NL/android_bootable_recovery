@@ -22,4 +22,6 @@ void SetMinadbdSocketFd(int socket_fd);
 
 void SetMinadbdRescueMode(bool);
 
+void SetMinadbdAutomationMode(bool);
+
 void SetSideloadMountPoint(const std::string& path);

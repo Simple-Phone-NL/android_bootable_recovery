@@ -268,7 +268,7 @@ static InstallResult apply_update_menu(Device* device, Device::BuiltinAction* re
     }
 
     if (chosen == item_sideload) {
-      status = ApplyFromAdb(device, false /* rescue_mode */, reboot_action);
+      status = ApplyFromAdb(device, AdbInteractionMode::kSideload, reboot_action);
     } else if (chosen == item_virtiofs && InitializeVirtiofs()) {
       status = ApplyFromVirtiofs(device);
     } else {
@@ -583,7 +583,8 @@ change_menu:
       }
 
       case Device::APPLY_UPDATE:
-      case Device::ENTER_RESCUE: {
+      case Device::ENTER_RESCUE:
+      case Device::ENTER_AUTOMATION: {
         save_current_log = true;
 
         update_in_progress = true;
@@ -593,7 +594,15 @@ change_menu:
         if (chosen_action == Device::ENTER_RESCUE) {
           // Switch to graphics screen.
           ui->ShowText(false);
-          status = ApplyFromAdb(device, true /* rescue_mode */, &reboot_action);
+          status = ApplyFromAdb(device, AdbInteractionMode::kRescue, &reboot_action);
+        } else if (chosen_action == Device::ENTER_AUTOMATION) {
+          ui->ShowText(false);
+          if (!android::base::GetBoolProperty("ro.recovery.adb_automation", true)) {
+            ui->Print("ADB automation mode is disabled (ro.recovery.adb_automation).\n");
+            status = INSTALL_ERROR;
+          } else {
+            status = ApplyFromAdb(device, AdbInteractionMode::kAutomation, &reboot_action);
+          }
         } else if (chosen_action == Device::APPLY_UPDATE) {
           status = apply_update_menu(device, &reboot_action);
         }
@@ -748,6 +757,7 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
     { "shutdown_after", no_argument, nullptr, 0 },
     { "sideload", no_argument, nullptr, 0 },
     { "sideload_auto_reboot", no_argument, nullptr, 0 },
+    { "automation", no_argument, nullptr, 0 },
     { "update_package", required_argument, nullptr, 0 },
     { "wipe_ab", no_argument, nullptr, 0 },
     { "wipe_cache", no_argument, nullptr, 0 },
@@ -768,6 +778,7 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
   size_t wipe_package_size = 0;
   bool sideload = false;
   bool sideload_auto_reboot = false;
+  bool automation = false;
   bool rescue = false;
   bool just_exit = false;
   bool shutdown_after = false;
@@ -802,6 +813,8 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
           should_prompt_and_wipe_data = true;
         } else if (option == "rescue") {
           rescue = true;
+        } else if (option == "automation") {
+          automation = true;
         } else if (option == "retry_count") {
           android::base::ParseInt(optarg, &retry_count, 0);
         } else if (option == "security") {
@@ -836,6 +849,16 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
     }
   }
   optind = 1;
+
+  // Only one adb interaction mode may be active; automation takes precedence.
+  if (automation) {
+    sideload = false;
+    sideload_auto_reboot = false;
+    rescue = false;
+  } else if (rescue && sideload) {
+    sideload = false;
+    sideload_auto_reboot = false;
+  }
 
   printf("stage is [%s]\n", device->GetStage().value_or("").c_str());
   printf("reason is [%s]\n", device->GetReason().value_or("").c_str());
@@ -988,6 +1011,18 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
     if (!WipeAbDevice(device, wipe_package_size)) {
       status = INSTALL_ERROR;
     }
+  } else if (automation) {
+    // 'adb reboot automation' (when supported by host adb) or --automation in the BCB enters full
+    // automation mode: sideload, factory reset (wipe), and reboot are available without the menu.
+    save_current_log = true;
+    if (!android::base::GetBoolProperty("ro.recovery.adb_automation", true)) {
+      ui->Print("ADB automation mode is disabled (ro.recovery.adb_automation).\n");
+      status = INSTALL_ERROR;
+    } else {
+      ui->ShowText(false);
+      status = ApplyFromAdb(device, AdbInteractionMode::kAutomation, &next_action);
+      ui->Print("\nADB automation complete (status: %d).\n", status);
+    }
   } else if (sideload) {
     // 'adb reboot sideload' acts the same as user presses key combinations to enter the sideload
     // mode. When 'sideload-auto-reboot' is used, text display will NOT be turned on by default. And
@@ -998,7 +1033,7 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
       ui->ShowText(true);
     }
     ui->SetSideloadAutoReboot(sideload_auto_reboot);
-    status = ApplyFromAdb(device, false /* rescue_mode */, &next_action);
+    status = ApplyFromAdb(device, AdbInteractionMode::kSideload, &next_action);
     ui->Print("\nInstall from ADB complete (status: %d).\n", status);
     if (sideload_auto_reboot) {
       status = INSTALL_REBOOT;
@@ -1006,7 +1041,7 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
     }
   } else if (rescue) {
     save_current_log = true;
-    status = ApplyFromAdb(device, true /* rescue_mode */, &next_action);
+    status = ApplyFromAdb(device, AdbInteractionMode::kRescue, &next_action);
     ui->Print("\nInstall from ADB complete (status: %d).\n", status);
   } else if (!just_exit) {
     // Always show menu if no command is specified.

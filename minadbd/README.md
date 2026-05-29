@@ -22,3 +22,8 @@ active at any given time.
       the comments in `bootable/recovery/install/adb_install.cpp` for the IPC protocol between
       `recovery` and `minadbd`.
   - Upon exiting `minadbd`, `recovery` restarts `adbd` if it was previously running.
+
+## Automation mode
+
+With `--automation`, `minadbd` enables both sideload-host services and wipe-data / rescue-wipe
+services. See [docs/ADB_AUTOMATION.md](../docs/ADB_AUTOMATION.md).
