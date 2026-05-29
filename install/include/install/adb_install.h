@@ -19,18 +19,7 @@
 #include "install/install.h"
 #include "recovery_ui/device.h"
 
-// How recovery interacts with minadbd / host adb.
-enum class AdbInteractionMode {
-  // Apply update from ADB only (standard sideload).
-  kSideload = 0,
-  // Rescue automation (install/getprop/wipe); no sideload-host.
-  kRescue = 1,
-  // Full automation: sideload, factory reset (wipe data), and reboot over adb.
-  kAutomation = 2,
-};
-
-// Applies a package via `adb sideload`, `adb rescue`, or automation mode. Returns the install
-// result. When a reboot has been requested, INSTALL_REBOOT will be the return value, with the
-// reboot target set in reboot_action.
-InstallResult ApplyFromAdb(Device* device, AdbInteractionMode mode,
-                           Device::BuiltinAction* reboot_action);
+// Applies a package via `adb sideload` or `adb rescue`. Returns the install result. When a reboot
+// has been requested, INSTALL_REBOOT will be the return value, with the reboot target set in
+// reboot_action.
+InstallResult ApplyFromAdb(Device* device, bool rescue_mode, Device::BuiltinAction* reboot_action);

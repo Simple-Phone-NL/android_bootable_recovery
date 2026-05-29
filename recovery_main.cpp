@@ -493,9 +493,6 @@ int main(int argc, char** argv) {
     device->RemoveMenuItemForAction(Device::RUN_LOCALE_TEST);
     device->RemoveMenuItemForAction(Device::ENTER_RESCUE);
   }
-  if (get_build_type() == "user") {
-    device->RemoveMenuItemForAction(Device::ENTER_AUTOMATION);
-  }
 
   if (get_build_type() != "userdebug") {
     device->RemoveMenuItemForAction(Device::ENABLE_ADB);

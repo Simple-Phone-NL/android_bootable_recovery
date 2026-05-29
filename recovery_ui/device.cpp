@@ -48,7 +48,6 @@ static std::vector<menu_action_t> g_advanced_actions{
   { "Run graphics test", Device::RUN_GRAPHICS_TEST },
   { "Run locale test", Device::RUN_LOCALE_TEST },
   { "Enter rescue", Device::ENTER_RESCUE },
-  { "Enter ADB automation", Device::ENTER_AUTOMATION },
   { "Power off", Device::SHUTDOWN },
 };
 

@@ -51,7 +51,6 @@
 
 static int minadbd_socket = -1;
 static bool rescue_mode = false;
-static bool automation_mode = false;
 static std::string sideload_mount_point = FUSE_SIDELOAD_HOST_MOUNTPOINT;
 
 void SetMinadbdSocketFd(int socket_fd) {
@@ -60,10 +59,6 @@ void SetMinadbdSocketFd(int socket_fd) {
 
 void SetMinadbdRescueMode(bool rescue) {
   rescue_mode = rescue;
-}
-
-void SetMinadbdAutomationMode(bool automation) {
-  automation_mode = automation;
 }
 
 void SetSideloadMountPoint(const std::string& path) {
@@ -327,42 +322,34 @@ unique_fd daemon_service_to_fd(std::string_view name, atransport* /* transport *
     return unique_fd{};
   }
 
-  const bool extended_services = rescue_mode || automation_mode;
-
-  // Rescue / automation extended services (wipe, getprop, rescue-install).
-  if (extended_services) {
+  // Rescue-specific services.
+  if (rescue_mode) {
     if (android::base::ConsumePrefix(&name, "rescue-install:")) {
       // rescue-install:<file-size>:<block-size>
       std::string args(name);
       return create_service_thread(
           "rescue-install", std::bind(RescueInstallHostService, std::placeholders::_1, args));
-    }
-    if (android::base::ConsumePrefix(&name, "rescue-getprop:")) {
+    } else if (android::base::ConsumePrefix(&name, "rescue-getprop:")) {
       // rescue-getprop:<prop>
       std::string args(name);
       return create_service_thread(
           "rescue-getprop", std::bind(RescueGetpropHostService, std::placeholders::_1, args));
-    }
-    if (android::base::ConsumePrefix(&name, "rescue-wipe:") ||
-        android::base::ConsumePrefix(&name, "wipe-data:")) {
-      // rescue-wipe:userdata:<message-size> or wipe-data:userdata:<message-size>
+    } else if (android::base::ConsumePrefix(&name, "rescue-wipe:")) {
+      // rescue-wipe:target:<message-size>
       std::string args(name);
       return create_service_thread("rescue-wipe",
                                    std::bind(WipeDeviceService, std::placeholders::_1, args));
     }
 
-    if (rescue_mode) {
-      return unique_fd{};
-    }
+    return unique_fd{};
   }
 
-  // Sideload-specific services (standard sideload and automation mode).
+  // Sideload-specific services.
   if (name.starts_with("sideload:")) {
     // This exit status causes recovery to print a special error message saying to use a newer adb
     // (that supports sideload-host).
     exit(kMinadbdAdbVersionError);
-  }
-  if (android::base::ConsumePrefix(&name, "sideload-host:")) {
+  } else if (android::base::ConsumePrefix(&name, "sideload-host:")) {
     // sideload-host:<file-size>:<block-size>
     std::string args(name);
     return create_service_thread("sideload-host",
